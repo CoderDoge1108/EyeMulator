@@ -1,44 +1,175 @@
-"""Reference snippets: how to integrate the EyeMulator human-attention weights
-into a supervised fine-tuning loop.
+"""Technical reference implementation of the EyeMulator method components.
 
-This file is a documented collection of the key building blocks --- a
-weighted causal-LM loss, a weighted data collator, and a weighted-
-preprocessing function --- designed to be copied into your own training
-stack and adapted to your backbone of choice (Llama, StarCoder, DeepSeek-
-Coder, or any larger model you wish to scale up to).
+This file mirrors the method description in Section 2 and Algorithm 1 of the
+EyeMulator paper at the granularity of reusable building blocks. It is
+intentionally PyTorch-level (not tied to `transformers.Trainer`), backbone-
+agnostic (no model id hard-coded), and hyperparameter-open (every constant
+is a named argument with a sensible default, clearly flagged as tunable) so
+that researchers scaling the method up to larger backbones or new codebases
+can copy-paste, re-parameterize, and extend it without inheriting our small-
+scale experimental defaults.
 
-The snippets are deliberately framework-agnostic: the choice of batching,
-learning-rate schedule, evaluation strategy, and distributed setup is
-highly project-specific, so those decisions are left to the implementer. See
-`docs/METHOD_INTEGRATION.md` for the conceptual walk-through and
-`example/compute_token_weights.py` for a runnable demo that computes w_j
-from the priors without any heavyweight dependencies.
+The components provided are, in the order in which Algorithm 1 uses them:
 
-Dependencies, if you want to import these classes into your own project:
+    1. `sample_attention_density`      --- ρ ~ Beta(α_agg, β_agg)
+    2. `generate_pseudo_scan_path`     --- P̃ from priors + ρ (Algorithm 1, l.9)
+    3. `token_weight`                  --- w_j formula (Algorithm 1, l.12; re-exported from
+                                           compute_token_weights.py so both files stay in sync)
+    4. `CausalLMWithWeightedLoss`      --- L_SFT = −Σ_{j∈P̃} w_j log P_ϕ(x_j | x_<j)
+    5. `token_level_preference_loss`   --- a reference realization of the token-level
+                                           preference objective described in Section 2.4
+    6. `EyeMulatorCompositeObjective`  --- L = L_SFT + γ · L_pref
+    7. `WeightedCollator`              --- batching with per-token weights + preferred masks
+    8. `build_training_example`        --- full preprocessing: text -> tensors
+
+A short pseudocode wiring sketch at the bottom shows how the pieces fit
+together inside any training loop. The file does not call any trainer
+entrypoint, and does not ship a `main()` --- by design, because the right
+training orchestration (batch size, schedule, mixed precision, sharding,
+evaluation) depends on the backbone and infrastructure at hand.
+
+Dependencies:
     pip install torch transformers
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+import os
+import sys
+from dataclasses import dataclass, field
+from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
 import torch
+import torch.nn.functional as F
+from torch import nn
 from torch.nn import CrossEntropyLoss
-from transformers import AutoTokenizer, LlamaForCausalLM
+from transformers import AutoTokenizer, PreTrainedModel, PreTrainedTokenizerBase
 from transformers.modeling_outputs import CausalLMOutputWithPast
 
+sys.path.insert(0, os.path.dirname(__file__))
+from compute_token_weights import load_priors, token_weight  # noqa: E402
 
-# ---------------------------------------------------------------------------
-# Snippet 1: a weighted causal-LM loss.
+
+# ============================================================================
+# 1. Attention-density sampling -- Algorithm 1, line 8
+# ============================================================================
 #
-# Subclass your backbone's `*ForCausalLM` and override `forward` so the
-# cross-entropy is scaled element-wise by a `weights` tensor shaped like
-# `labels`. Labels of -100 (padding / prompt-side tokens) are ignored as
-# usual. For other backbones, swap the base class: e.g. GPT2LMHeadModel,
-# StarCoder's GPTBigCodeForCausalLM, or DeepseekForCausalLM.
-# ---------------------------------------------------------------------------
+# Each pseudo-scan path is generated at a sampled "attention density" rho that
+# controls what fraction of code tokens the hypothetical reader fixates on.
+# The paper models this density with a Beta(alpha_agg, beta_agg) distribution
+# whose parameters are aggregated from the per-semantic-label Betas in
+# priors/<condition>/beta_distribution.json.
+# ----------------------------------------------------------------------------
+
+def aggregate_beta_params(priors: Dict[str, Any]) -> Tuple[float, float]:
+    """Aggregate per-label Beta(alpha_s, beta_s) parameters into a single
+    corpus-level Beta(alpha_agg, beta_agg) by summing counts. Any other
+    well-motivated aggregation (weighted by label frequency, hierarchical
+    Bayesian pooling, etc.) is also defensible; swap this out if you have
+    a richer aggregation scheme."""
+    raw = priors.get("_raw_beta")
+    if not raw:
+        return 1.0, 1.0  # uninformative fallback
+    alpha_agg = float(sum(item["alpha"] for item in raw))
+    beta_agg  = float(sum(item["beta"]  for item in raw))
+    return alpha_agg, beta_agg
+
+
+def sample_attention_density(alpha_agg: float, beta_agg: float,
+                             generator: Optional[torch.Generator] = None) -> float:
+    """Return one sample ρ ~ Beta(alpha_agg, beta_agg), interpreted as the
+    expected fraction of tokens to include in the pseudo-scan path."""
+    # torch has no direct Beta; sample via two Gammas.
+    a = torch._standard_gamma(torch.tensor([alpha_agg]), generator=generator)
+    b = torch._standard_gamma(torch.tensor([beta_agg]),  generator=generator)
+    return float(a / (a + b))
+
+
+# ============================================================================
+# 2. Pseudo-scan-path generation -- Algorithm 1, line 9
+# ============================================================================
+#
+# Given an example's token-level semantic labels and the condition priors,
+# emit a 0/1 mask over tokens indicating which tokens belong to the
+# synthetic scan path. This replaces the per-example `mask` field when you
+# want to regenerate scan paths dynamically at training time (recommended
+# when you scale the dataset up) rather than reuse the precomputed one.
+# ----------------------------------------------------------------------------
+
+def generate_pseudo_scan_path(
+    semantic_token_sequence: Sequence[int],
+    priors:                  Dict[str, Any],
+    rho:                     float,
+    transition_probs:        Optional[Dict[Tuple[str, str], float]] = None,
+    generator:               Optional[torch.Generator] = None,
+) -> List[int]:
+    """Produce a binary mask `path` with `path[j] == 1` iff token j is on
+    the pseudo-scan path. Two signals are combined:
+
+      (a) a per-token salience prior `E[theta_{s_j}]` from the Beta posterior
+          for token j's semantic label, and
+      (b) an optional transition probability P_trans that biases consecutive
+          path memberships toward observed reading transitions.
+
+    The `rho` parameter (sampled once per example) rescales the whole path so
+    that its expected density matches a realistic reader's attention budget.
+
+    This is one reasonable realization of Algorithm 1's GeneratePath; many
+    alternatives are defensible and we encourage experimentation (e.g.
+    Bernoulli-HMM path sampling, beam-search over transitions, or purely
+    prior-driven thresholding). The canonical version below keeps the
+    arithmetic transparent.
+    """
+    sem_to_label = priors["semantic_id_to_label"]
+    label_mean   = priors["label_to_mean_attn"]
+    n = len(semantic_token_sequence)
+    path: List[int] = [0] * n
+
+    prev_label: Optional[str] = None
+    for j, sem_id in enumerate(semantic_token_sequence):
+        label = sem_to_label.get(int(sem_id))
+        if label is None:
+            continue
+        p = label_mean.get(label, 0.0) * rho
+
+        if transition_probs is not None and prev_label is not None and path[j - 1] == 1:
+            p = 0.5 * (p + transition_probs.get((prev_label, label), 0.0))
+
+        u = torch.rand(1, generator=generator).item()
+        path[j]    = 1 if u < p else 0
+        prev_label = label
+    return path
+
+
+# ============================================================================
+# 3. Per-token weight -- Algorithm 1, line 12
+# ============================================================================
+#
+# `token_weight` is re-exported from compute_token_weights.py so that the
+# demo script and this reference share a single implementation of the
+# formula w_j = w_base + 1/log(freq(g_j)+2) + E[theta_{s_j}].
+# ----------------------------------------------------------------------------
+
+__all_exports_from_compute__ = [load_priors, token_weight]
+
+
+# ============================================================================
+# 4. Weighted SFT loss -- Algorithm 1, line 15
+# ============================================================================
+#
+# L_SFT(phi) = -(1/|P̃|) * sum_{j in P̃}  w_j  log P_phi(x_j | x_<j)
+#
+# Subclass your backbone's *ForCausalLM and override `forward` so the cross-
+# entropy is scaled element-wise by a `weights` tensor shaped like `labels`.
+# Tokens with label == -100 are ignored as usual. The example below uses
+# LlamaForCausalLM for illustration; for other backbones, swap the base
+# class (GPT2LMHeadModel, GPTBigCodeForCausalLM, DeepseekForCausalLM, ...).
+# ----------------------------------------------------------------------------
+
+from transformers import LlamaForCausalLM  # noqa: E402
 
 class CausalLMWithWeightedLoss(LlamaForCausalLM):
+    """Causal LM whose loss is the weighted, mask-aware cross-entropy."""
+
     def forward(
         self,
         input_ids:      torch.LongTensor = None,
@@ -59,46 +190,160 @@ class CausalLMWithWeightedLoss(LlamaForCausalLM):
         if labels is not None:
             shift_logits = logits[..., :-1, :].contiguous()
             shift_labels = labels[..., 1:].contiguous()
-            loss_per_token = CrossEntropyLoss(reduction="none")(
+            per_tok = CrossEntropyLoss(reduction="none")(
                 shift_logits.view(-1, self.config.vocab_size),
                 shift_labels.view(-1),
             )
             active = shift_labels.view(-1) != -100
 
             if weights is not None:
-                shift_weights = weights[..., 1:].contiguous().view(-1)
-                w = shift_weights[active]
-                loss = (loss_per_token[active] * w).sum() / (active.sum() + 1e-9)
+                w = weights[..., 1:].contiguous().view(-1)[active]
+                loss = (per_tok[active] * w).sum() / (active.sum() + 1e-9)
             else:
-                loss = loss_per_token[active].mean()
+                loss = per_tok[active].mean()
 
         return CausalLMOutputWithPast(
-            loss=loss,
-            logits=logits,
-            past_key_values=outputs.past_key_values,
+            loss=loss, logits=logits, past_key_values=outputs.past_key_values,
         )
 
 
-# ---------------------------------------------------------------------------
-# Snippet 2: a data collator that pads input_ids, labels, and weights
-# consistently. Adjust MAX_LENGTH to your compute budget.
-# ---------------------------------------------------------------------------
+# ============================================================================
+# 5. Token-level preference loss -- Algorithm 1, line 16 (reference version)
+# ============================================================================
+#
+# The paper's L_DPO treats the pseudo-scan-path tokens as the "winning"
+# trajectory and the complement as the "losing" trajectory, adapting the
+# Direct Preference Optimization (Rafailov et al., 2023) formulation to the
+# token level. Many concrete realizations are possible; the one below is a
+# minimal, reference-quality margin-based version that:
+#
+#   * treats each output position as an independent preference comparison,
+#   * uses a frozen copy of the initial policy as the reference pi_ref,
+#   * computes per-token log-ratios r_j = log pi_phi(x_j|x_<j) - log pi_ref(x_j|x_<j),
+#   * aggregates preferred (P̃) vs dispreferred (complement) r_j into a
+#     sigmoid-margin loss of strength beta, masked to output-side tokens.
+#
+# This keeps the shape of the paper's objective while being transparent,
+# dependency-free (no trl), and easy to replace with a richer preference
+# objective (IPO, KTO, SimPO, token-level DPO variants) as the community
+# explores what works best at scale.
+# ----------------------------------------------------------------------------
+
+def _log_probs_of_labels(logits: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
+    """Gather log P(label_j | context) for each position; shape (B, T-1)."""
+    shift_logits = logits[..., :-1, :].contiguous()
+    shift_labels = labels[..., 1:].contiguous()
+    logp = F.log_softmax(shift_logits, dim=-1)
+    safe_labels = shift_labels.clamp_min(0)  # replace -100 with 0 for the gather
+    gathered = logp.gather(-1, safe_labels.unsqueeze(-1)).squeeze(-1)
+    gathered = gathered.masked_fill(shift_labels == -100, 0.0)
+    return gathered
+
+
+def token_level_preference_loss(
+    policy_logits:    torch.Tensor,      # (B, T, V)
+    reference_logits: torch.Tensor,      # (B, T, V) from a frozen copy of the initial policy
+    labels:           torch.Tensor,      # (B, T)   with -100 on prompt/pad positions
+    preferred_mask:   torch.Tensor,      # (B, T)   1 where token is on pseudo-scan path, else 0
+    beta:             float = 0.1,       # KL-regularization strength (tunable; paper used gamma*beta-like scaling)
+    eps:              float = 1e-9,
+) -> torch.Tensor:
+    """Reference token-level preference loss. Returns a scalar.
+
+    For every output-side position j with label_j != -100, we compute the
+    per-token log-ratio r_j = log pi_phi(label_j | x_<j) - log pi_ref(label_j | x_<j).
+    We then aggregate r_j separately over the preferred mask (j in P̃) and
+    the dispreferred mask (j in output \\ P̃) and push the preferred mean
+    to be larger than the dispreferred mean by a sigmoid margin of strength
+    beta.  The resulting loss has the familiar DPO shape
+        L = -log sigma( beta * ( mean_pref(r) - mean_disp(r) ) ).
+    """
+    log_pi   = _log_probs_of_labels(policy_logits,    labels)
+    log_ref  = _log_probs_of_labels(reference_logits, labels)
+    log_ratio = log_pi - log_ref                              # (B, T-1)
+
+    mask     = (labels[..., 1:] != -100).float()
+    pref     = preferred_mask[..., 1:].float() * mask
+    disp     = (1.0 - preferred_mask[..., 1:].float()) * mask
+
+    mean_pref = (log_ratio * pref).sum() / (pref.sum() + eps)
+    mean_disp = (log_ratio * disp).sum() / (disp.sum() + eps)
+    return -F.logsigmoid(beta * (mean_pref - mean_disp))
+
+
+# ============================================================================
+# 6. Composite objective -- Algorithm 1, line 17
+# ============================================================================
+#
+# L_total = L_SFT + gamma * L_pref
+# ----------------------------------------------------------------------------
+
+@dataclass
+class EyeMulatorCompositeObjective:
+    """Convenience wrapper. `policy` is the trainable model (an instance of
+    CausalLMWithWeightedLoss or a subclass); `reference` is a frozen copy of
+    the *initial* policy used only for the preference term. Passing
+    `reference=None` collapses this to pure weighted SFT."""
+
+    policy:    nn.Module
+    reference: Optional[nn.Module] = None
+    gamma:     float = 0.1          # paper used a small weight on the preference term
+    beta:      float = 0.1          # sigmoid-margin strength inside the preference loss
+
+    def __call__(
+        self,
+        input_ids:       torch.LongTensor,
+        attention_mask:  torch.Tensor,
+        labels:          torch.LongTensor,
+        weights:         torch.FloatTensor,
+        preferred_mask:  torch.LongTensor,
+    ) -> torch.Tensor:
+        out = self.policy(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            labels=labels,
+            weights=weights,
+        )
+        loss = out.loss
+
+        if self.reference is not None and self.gamma > 0:
+            with torch.no_grad():
+                ref_logits = self.reference(
+                    input_ids=input_ids,
+                    attention_mask=attention_mask,
+                ).logits
+            loss = loss + self.gamma * token_level_preference_loss(
+                policy_logits    = out.logits,
+                reference_logits = ref_logits,
+                labels           = labels,
+                preferred_mask   = preferred_mask,
+                beta             = self.beta,
+            )
+        return loss
+
+
+# ============================================================================
+# 7. Data collator
+# ============================================================================
 
 @dataclass
 class WeightedCollator:
-    tokenizer: AutoTokenizer
+    tokenizer:  PreTrainedTokenizerBase
     max_length: int = 1024
 
     def __call__(self, features: List[Dict[str, Any]]) -> Dict[str, torch.Tensor]:
         batch: Dict[str, torch.Tensor] = {}
-        for key in features[0]:
+        keys = list(features[0].keys())
+        for key in keys:
             for f in features:
                 if len(f[key]) > self.max_length:
                     f[key] = f[key][: self.max_length]
             if key == "weights":
                 pad, dtype = 1.0, torch.float
-            elif key == "labels":
+            elif key in ("labels",):
                 pad, dtype = -100, torch.long
+            elif key in ("preferred_mask",):
+                pad, dtype = 0, torch.long
             else:
                 pad, dtype = self.tokenizer.pad_token_id, torch.long
             batch[key] = torch.tensor(
@@ -108,40 +353,50 @@ class WeightedCollator:
         return batch
 
 
-# ---------------------------------------------------------------------------
-# Snippet 3: tokenize one raw example into (input_ids, labels, weights).
+# ============================================================================
+# 8. Preprocessing: raw example -> training-ready tensors
+# ============================================================================
 #
-# `example` is assumed to already carry the per-token human-attention signals
-# described in `docs/DATA_SCHEMA.md` (the fields `mask`, `ngram_indices`,
-# `semantic_token_sequence`). The output is ready to be batched by
-# `WeightedCollator` and consumed by `CausalLMWithWeightedLoss`.
+# Takes one raw JSONL example (carrying the per-token human-attention signals
+# documented in docs/DATA_SCHEMA.md), tokenizes it against the target
+# tokenizer, computes per-token weights w_j using the priors, and produces
+# aligned `input_ids`, `attention_mask`, `labels`, `weights`, and
+# `preferred_mask` lists ready for the collator above.
 #
-# `priors` is the dict returned by `compute_token_weights.load_priors(...)`.
-# `token_weight` is imported from the same module.
-#
-# `task_prompt`, `input_header`, and `output_header` are the three string
-# fragments that bracket the input/output portions of the prompt; change them
-# to match your own instruction format.
-# ---------------------------------------------------------------------------
+# `dynamic_path=True` regenerates a fresh pseudo-scan path each call (closer
+# to Algorithm 1 as written); `dynamic_path=False` reuses the precomputed
+# mask in the example, which is faster and what our small-scale experiments
+# did. Both are valid design points.
+# ----------------------------------------------------------------------------
 
 def build_training_example(
     example:       Dict[str, Any],
-    tokenizer:     AutoTokenizer,
+    tokenizer:     PreTrainedTokenizerBase,
     priors:        Dict[str, Any],
-    token_weight,  # callable: (mask_j, ngram_idx_j, sem_id_j, priors) -> float
     task_prompt:   str = "### Instruction:\nComplete the following code snippet.\n\n",
     input_header:  str = "### Input Code:\n",
     output_header: str = "\n\n### Output:\n",
     max_length:    int = 1024,
+    dynamic_path:  bool = False,
+    rho:           Optional[float] = None,
 ) -> Dict[str, List]:
-    # Per-token weights on the input side (drive where the model should attend).
-    w_code = [
-        token_weight(
-            example["mask"][j],
-            example["ngram_indices"][j],
-            example["semantic_token_sequence"][j],
-            priors,
+    mask: Sequence[int]
+    if dynamic_path:
+        if rho is None:
+            alpha_agg, beta_agg = aggregate_beta_params(priors)
+            rho = sample_attention_density(alpha_agg, beta_agg)
+        mask = generate_pseudo_scan_path(
+            example["semantic_token_sequence"], priors, rho,
         )
+        ngram_idx = example["ngram_indices"]        # keep for rarity bonus
+        sem_seq   = example["semantic_token_sequence"]
+    else:
+        mask      = example["mask"]
+        ngram_idx = example["ngram_indices"]
+        sem_seq   = example["semantic_token_sequence"]
+
+    w_code = [
+        token_weight(mask[j], ngram_idx[j], sem_seq[j], priors)
         for j in range(len(example["code_tokens"]))
     ]
 
@@ -151,44 +406,72 @@ def build_training_example(
     tok_full   = tokenizer(text,   max_length=max_length, truncation=True)
     tok_prompt = tokenizer(prompt, max_length=max_length, truncation=True)
     input_ids  = tok_full["input_ids"]
-    labels     = list(input_ids)
-    labels[: len(tok_prompt["input_ids"])] = [-100] * len(tok_prompt["input_ids"])
+    n_prompt   = len(tok_prompt["input_ids"])
+    n_out      = len(input_ids) - n_prompt
 
-    # Default weight schedule: prompt tokens get w=1.0; output tokens inherit
-    # the mean input-side weight. Consider replacing this with a per-output-
-    # token alignment scheme if your task warrants it.
-    mean_w   = sum(w_code) / len(w_code) if w_code else 1.0
-    n_prompt = len(tok_prompt["input_ids"])
-    n_out    = len(input_ids) - n_prompt
-    weights  = [1.0] * n_prompt + [float(mean_w)] * n_out
+    labels = list(input_ids)
+    labels[:n_prompt] = [-100] * n_prompt
+
+    # Token-weight schedule for the output portion. We use the mean input-side
+    # weight as a simple, model-free aggregate; richer schemes (cross-attention
+    # alignment, retrieval-guided mapping, etc.) are a natural next experiment.
+    mean_w  = sum(w_code) / len(w_code) if w_code else 1.0
+    weights = [1.0] * n_prompt + [float(mean_w)] * n_out
+
+    # Preferred-mask schedule for the preference loss. We mark every output-
+    # side token as "preferred" at a rate proportional to the example-level
+    # salience. Users scaling up are encouraged to replace this with a token-
+    # aligned scheme (e.g. by projecting `mask` through the tokenizer offsets).
+    preferred_rate = sum(mask) / max(1, len(mask))
+    preferred_mask = [0] * n_prompt + [
+        int(torch.rand(1).item() < preferred_rate) for _ in range(n_out)
+    ]
 
     return {
         "input_ids":      input_ids,
         "attention_mask": [1] * len(input_ids),
         "labels":         labels,
         "weights":        weights,
+        "preferred_mask": preferred_mask,
     }
 
 
-# ---------------------------------------------------------------------------
-# Typical wiring sketch (pseudocode, NOT executed by this file):
+# ============================================================================
+# 9. Wiring sketch  (pseudocode --- NOT executed by this file)
+# ============================================================================
 #
 #     from compute_token_weights import load_priors, token_weight
 #     priors = load_priors("priors/combined")
 #
-#     tokenizer = AutoTokenizer.from_pretrained(MY_BACKBONE)
+#     tokenizer = AutoTokenizer.from_pretrained(YOUR_BACKBONE)
 #     if tokenizer.pad_token is None:
 #         tokenizer.pad_token_id = tokenizer.eos_token_id
-#     model = CausalLMWithWeightedLoss.from_pretrained(MY_BACKBONE)
 #
-#     features = [build_training_example(ex, tokenizer, priors, token_weight)
-#                 for ex in my_dataset]           # or use Dataset.map(...)
+#     policy    = CausalLMWithWeightedLoss.from_pretrained(YOUR_BACKBONE)
+#     reference = CausalLMWithWeightedLoss.from_pretrained(YOUR_BACKBONE).eval()
+#     for p in reference.parameters():
+#         p.requires_grad_(False)
 #
-#     trainer = Trainer(
-#         model=model,
-#         args=TrainingArguments(...),            # your own hyperparameters
-#         train_dataset=features,
-#         data_collator=WeightedCollator(tokenizer),
-#     )
-#     trainer.train()
-# ---------------------------------------------------------------------------
+#     objective = EyeMulatorCompositeObjective(policy=policy, reference=reference,
+#                                              gamma=0.1, beta=0.1)
+#
+#     features = [
+#         build_training_example(ex, tokenizer, priors, dynamic_path=True)
+#         for ex in your_dataset
+#     ]
+#     collate = WeightedCollator(tokenizer=tokenizer, max_length=YOUR_MAX_LEN)
+#     loader  = torch.utils.data.DataLoader(features, batch_size=YOUR_BS,
+#                                           collate_fn=collate, shuffle=True)
+#
+#     optim = torch.optim.AdamW(policy.parameters(), lr=YOUR_LR)
+#     for epoch in range(YOUR_EPOCHS):
+#         for batch in loader:
+#             loss = objective(**batch)
+#             optim.zero_grad(); loss.backward(); optim.step()
+#
+# Replace `YOUR_BACKBONE`, `YOUR_MAX_LEN`, `YOUR_BS`, `YOUR_LR`, and
+# `YOUR_EPOCHS` with the settings appropriate to your compute budget.
+# Distributed / mixed-precision / evaluation scaffolding is deliberately
+# omitted here -- those decisions are infrastructure-specific and should
+# be made by the scaling team.
+# ============================================================================

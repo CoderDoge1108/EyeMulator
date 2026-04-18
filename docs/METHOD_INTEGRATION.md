@@ -72,15 +72,47 @@ Tokens outside the human-attention mask (i.e. `mask_j == 0`) and tokens belongin
 
 See `example/compute_token_weights.py` for a runnable, commented implementation of this step.
 
-## Step 3 — Plug w into the loss
+## Step 3 — Assemble the composite objective
 
-The training objective is a standard causal-LM cross-entropy loss, multiplied element-wise by `w` and normalized by the number of active (non-masked) tokens:
+EyeMulator's training objective is a composite of a weighted SFT term and a token-level preference term, controlled by a scalar `γ`:
 
 ```
-L_SFT(φ) = (1 / |active|) * Σ_{j ∈ active}  w_j · ( − log P_φ(x_j | x_{<j}) )
+L_total(φ) = L_SFT(φ) + γ · L_pref(φ)
 ```
 
-where `active` is the set of output-side, non-padded positions (i.e. positions with `label ≠ -100`). The snippets in `example/weighted_sft_template.py` show this as a subclass of Hugging Face's `LlamaForCausalLM` (`CausalLMWithWeightedLoss`), together with a data collator (`WeightedCollator`) and a preprocessing helper (`build_training_example`). The pattern transfers cleanly to any causal LM — swap the base class to `GPT2LMHeadModel`, `GPTBigCodeForCausalLM`, or whatever your backbone requires.
+### 3a. Weighted SFT term
+
+A standard causal-LM cross-entropy loss, multiplied element-wise by `w` and normalized by the number of active positions on the pseudo-scan path:
+
+```
+L_SFT(φ) = −(1 / |P̃|) · Σ_{j ∈ P̃}  w_j · log P_φ(x_j | x_{<j})
+```
+
+where `P̃` is the generated pseudo-scan path for the example and "active" positions satisfy `label_j ≠ -100`. In `example/weighted_sft_template.py` this is realized by `CausalLMWithWeightedLoss`, a subclass of `LlamaForCausalLM` that overrides `forward` to consume an extra `weights` tensor. The pattern transfers cleanly to any causal LM — swap the base class to `GPT2LMHeadModel`, `GPTBigCodeForCausalLM`, or the backbone class that matches your model.
+
+### 3b. Token-level preference term
+
+The preference term adapts the DPO framework (Rafailov et al., 2023) to the token level: the pseudo-scan-path tokens `P̃` form the "winning" trajectory and the complement `x \ P̃` forms the "losing" trajectory. Concretely, let `π_φ` be the current policy and `π_ref` a frozen copy of the initial policy. Define the per-token log-ratio
+
+```
+r_j = log π_φ(x_j | x_{<j})  −  log π_ref(x_j | x_{<j})
+```
+
+and aggregate it separately over preferred and dispreferred positions:
+
+```
+L_pref(φ) = − log σ( β · ( mean_{j ∈ P̃} r_j  −  mean_{j ∈ x\P̃} r_j ) )
+```
+
+where `β` controls the sigmoid-margin strength. `example/weighted_sft_template.py` provides `token_level_preference_loss(...)` as a minimal, dependency-free reference implementation of exactly this formulation. Groups scaling the method up may want to swap in IPO, KTO, SimPO, or one of the more recent token-level DPO variants — the rest of the pipeline stays identical.
+
+### 3c. Composite wrapper
+
+`EyeMulatorCompositeObjective` combines `CausalLMWithWeightedLoss` and `token_level_preference_loss` behind a single callable. Setting `reference=None` or `gamma=0` collapses it to pure weighted SFT, which is a useful diagnostic configuration when you first bring up the training loop on a new backbone.
+
+## Dynamic vs. precomputed scan paths
+
+The file `build_training_example(...)` accepts a `dynamic_path` flag. With `dynamic_path=True` a fresh pseudo-scan path is sampled per call from the priors (Algorithm 1 as written in the paper); with `dynamic_path=False` the precomputed `mask` field in each JSONL example is reused. The precomputed path is faster and is adequate for small-scale tuning; dynamic regeneration is better behaved when you sweep new hyperparameters or scale the dataset up, because it avoids overfitting the model to a single realization of the path.
 
 A few implementation notes:
 

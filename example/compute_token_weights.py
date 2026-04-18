@@ -56,6 +56,8 @@ def load_priors(prior_dir: str) -> Dict[str, Any]:
         "semantic_id_to_label": semantic_id_to_label,
         "ngram_counts":         ngram_counts,
         "label_to_mean_attn":   label_to_mean_attn,
+        "_raw_beta":            beta,
+        "_prior_dir":           prior_dir,
     }
 
 
