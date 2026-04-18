@@ -24,10 +24,19 @@ EyeMulator/
 │   ├── completion_{train,valid,test}_sample.jsonl
 │   ├── summarization_{train,valid,test}_sample.jsonl
 │   └── translation_{train,valid,test}_sample.jsonl
+├── figures/                       ← PDF figures from the paper for the human-attention side
+│   ├── human_study.pdf
+│   ├── eyemulator_overview.pdf
+│   ├── eyemulator_pseudo_path.pdf
+│   ├── combined_beta_distributions.pdf
+│   ├── combined_beta_curves.pdf
+│   └── category_distribution.pdf
 ├── docs/
-│   ├── DATA_SCHEMA.md             ← format of priors + dataset fields
-│   └── METHOD_INTEGRATION.md      ← walkthrough of the method components
+│   ├── DATA_SCHEMA.md               ← format of priors + dataset fields
+│   ├── METHOD_INTEGRATION.md        ← walkthrough of the method components
+│   └── HUMAN_ATTENTION_ANALYSIS.md  ← distribution analysis of the priors + figure index
 └── example/
+    ├── analyze_human_attention.py ← summarize Beta params and top n-grams from the priors
     ├── compute_token_weights.py   ← runnable demo: loads priors, computes per-token weight w_j
     └── weighted_sft_template.py   ← reference implementation of the method components
 ```
@@ -49,6 +58,18 @@ python example/compute_token_weights.py \
 ```
 
 This prints two examples with their per-token human-attention weights `w_j`. The demo uses only the Python standard library.
+
+## Inspecting the human-attention priors
+
+To reproduce the distribution analysis from the paper (posterior salience per semantic label, most frequent monogram / bigram / trigram fixation transitions), run:
+
+```bash
+python example/analyze_human_attention.py --priors priors/combined --top 10
+```
+
+The same script accepts `--priors priors/reading` or `--priors priors/writing` for the per-session views, and `--plot beta.pdf` to render the Beta density curves (requires `matplotlib`). A walkthrough of the priors, together with the corresponding figures from the paper, lives in [`docs/HUMAN_ATTENTION_ANALYSIS.md`](docs/HUMAN_ATTENTION_ANALYSIS.md); the original PDF figures are in [`figures/`](figures).
+
+## Wiring the method into a training pipeline
 
 To wire the method into a training pipeline, install the additional dependencies:
 
