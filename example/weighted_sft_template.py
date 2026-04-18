@@ -1,32 +1,28 @@
-"""Technical reference implementation of the EyeMulator method components.
+"""Reference implementation of the EyeMulator method components.
 
-This file mirrors the method description in Section 2 and Algorithm 1 of the
-EyeMulator paper at the granularity of reusable building blocks. It is
-intentionally PyTorch-level (not tied to `transformers.Trainer`), backbone-
-agnostic (no model id hard-coded), and hyperparameter-open (every constant
-is a named argument with a sensible default, clearly flagged as tunable) so
-that researchers scaling the method up to larger backbones or new codebases
-can copy-paste, re-parameterize, and extend it without inheriting our small-
-scale experimental defaults.
+Mirrors Section 2 and Algorithm 1 of the paper at the granularity of
+reusable building blocks. The file is PyTorch-level (not tied to
+`transformers.Trainer`), backbone-agnostic (no model id hard-coded), and
+leaves every hyperparameter exposed as a named argument, so it can be
+copy-pasted into a larger-scale training loop without inheriting the
+experimental defaults from our small-model runs.
 
-The components provided are, in the order in which Algorithm 1 uses them:
+Components, in the order Algorithm 1 uses them:
 
-    1. `sample_attention_density`      --- ρ ~ Beta(α_agg, β_agg)
-    2. `generate_pseudo_scan_path`     --- P̃ from priors + ρ (Algorithm 1, l.9)
-    3. `token_weight`                  --- w_j formula (Algorithm 1, l.12; re-exported from
-                                           compute_token_weights.py so both files stay in sync)
-    4. `CausalLMWithWeightedLoss`      --- L_SFT = −Σ_{j∈P̃} w_j log P_ϕ(x_j | x_<j)
-    5. `token_level_preference_loss`   --- a reference realization of the token-level
-                                           preference objective described in Section 2.4
-    6. `EyeMulatorCompositeObjective`  --- L = L_SFT + γ · L_pref
-    7. `WeightedCollator`              --- batching with per-token weights + preferred masks
-    8. `build_training_example`        --- full preprocessing: text -> tensors
+    1. sample_attention_density       ρ ~ Beta(α_agg, β_agg)
+    2. generate_pseudo_scan_path      P̃ from priors + ρ (Algorithm 1, line 9)
+    3. token_weight                   w_j formula (line 12; re-exported from
+                                      compute_token_weights.py)
+    4. CausalLMWithWeightedLoss       L_SFT = −Σ_{j∈P̃} w_j log P_ϕ(x_j | x_<j)
+    5. token_level_preference_loss    token-level preference term from §2.4
+    6. EyeMulatorCompositeObjective   L = L_SFT + γ · L_pref
+    7. WeightedCollator               batching with per-token weights + preferred masks
+    8. build_training_example         preprocessing: raw example -> tensors
 
 A short pseudocode wiring sketch at the bottom shows how the pieces fit
-together inside any training loop. The file does not call any trainer
-entrypoint, and does not ship a `main()` --- by design, because the right
-training orchestration (batch size, schedule, mixed precision, sharding,
-evaluation) depends on the backbone and infrastructure at hand.
+together in a training loop. The file does not call any trainer entry-point
+and does not ship a `main()`: batch size, schedule, mixed precision,
+sharding, and evaluation are backbone- and infra-specific.
 
 Dependencies:
     pip install torch transformers
@@ -61,11 +57,10 @@ from compute_token_weights import load_priors, token_weight  # noqa: E402
 # ----------------------------------------------------------------------------
 
 def aggregate_beta_params(priors: Dict[str, Any]) -> Tuple[float, float]:
-    """Aggregate per-label Beta(alpha_s, beta_s) parameters into a single
-    corpus-level Beta(alpha_agg, beta_agg) by summing counts. Any other
-    well-motivated aggregation (weighted by label frequency, hierarchical
-    Bayesian pooling, etc.) is also defensible; swap this out if you have
-    a richer aggregation scheme."""
+    """Collapse per-label Beta(alpha_s, beta_s) parameters into a single
+    corpus-level Beta(alpha_agg, beta_agg) by summing counts. Swap this
+    out for a frequency-weighted or hierarchical-Bayesian aggregation if
+    you want something richer."""
     raw = priors.get("_raw_beta")
     if not raw:
         return 1.0, 1.0  # uninformative fallback
@@ -113,11 +108,10 @@ def generate_pseudo_scan_path(
     The `rho` parameter (sampled once per example) rescales the whole path so
     that its expected density matches a realistic reader's attention budget.
 
-    This is one reasonable realization of Algorithm 1's GeneratePath; many
-    alternatives are defensible and we encourage experimentation (e.g.
-    Bernoulli-HMM path sampling, beam-search over transitions, or purely
-    prior-driven thresholding). The canonical version below keeps the
-    arithmetic transparent.
+    This is one realization of Algorithm 1's GeneratePath. Bernoulli-HMM
+    path sampling, beam search over transitions, or purely prior-driven
+    thresholding are all reasonable alternatives; the version below keeps
+    the arithmetic transparent.
     """
     sem_to_label = priors["semantic_id_to_label"]
     label_mean   = priors["label_to_mean_attn"]
@@ -211,11 +205,10 @@ class CausalLMWithWeightedLoss(LlamaForCausalLM):
 # 5. Token-level preference loss -- Algorithm 1, line 16 (reference version)
 # ============================================================================
 #
-# The paper's L_DPO treats the pseudo-scan-path tokens as the "winning"
-# trajectory and the complement as the "losing" trajectory, adapting the
-# Direct Preference Optimization (Rafailov et al., 2023) formulation to the
-# token level. Many concrete realizations are possible; the one below is a
-# minimal, reference-quality margin-based version that:
+# L_DPO in the paper treats the pseudo-scan-path tokens as the "winning"
+# trajectory and the complement as the "losing" trajectory, adapting DPO
+# (Rafailov et al., 2023) to the token level. The implementation below is
+# a minimal margin-based version that:
 #
 #   * treats each output position as an independent preference comparison,
 #   * uses a frozen copy of the initial policy as the reference pi_ref,
@@ -223,10 +216,9 @@ class CausalLMWithWeightedLoss(LlamaForCausalLM):
 #   * aggregates preferred (P̃) vs dispreferred (complement) r_j into a
 #     sigmoid-margin loss of strength beta, masked to output-side tokens.
 #
-# This keeps the shape of the paper's objective while being transparent,
-# dependency-free (no trl), and easy to replace with a richer preference
-# objective (IPO, KTO, SimPO, token-level DPO variants) as the community
-# explores what works best at scale.
+# It keeps the shape of the paper's objective while staying dependency-free
+# (no trl) and easy to replace with IPO, KTO, SimPO, or a newer token-level
+# DPO variant.
 # ----------------------------------------------------------------------------
 
 def _log_probs_of_labels(logits: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
@@ -357,16 +349,16 @@ class WeightedCollator:
 # 8. Preprocessing: raw example -> training-ready tensors
 # ============================================================================
 #
-# Takes one raw JSONL example (carrying the per-token human-attention signals
-# documented in docs/DATA_SCHEMA.md), tokenizes it against the target
-# tokenizer, computes per-token weights w_j using the priors, and produces
+# Take one raw JSONL example (with the per-token human-attention signals
+# documented in docs/data_schema.md), tokenize it against the target
+# tokenizer, compute per-token weights w_j from the priors, and produce
 # aligned `input_ids`, `attention_mask`, `labels`, `weights`, and
 # `preferred_mask` lists ready for the collator above.
 #
-# `dynamic_path=True` regenerates a fresh pseudo-scan path each call (closer
-# to Algorithm 1 as written); `dynamic_path=False` reuses the precomputed
-# mask in the example, which is faster and what our small-scale experiments
-# did. Both are valid design points.
+# `dynamic_path=True` regenerates a fresh pseudo-scan path each call
+# (closer to Algorithm 1 as written); `dynamic_path=False` reuses the
+# precomputed mask in the example, which is faster and what our small-scale
+# runs did.
 # ----------------------------------------------------------------------------
 
 def build_training_example(
@@ -412,16 +404,16 @@ def build_training_example(
     labels = list(input_ids)
     labels[:n_prompt] = [-100] * n_prompt
 
-    # Token-weight schedule for the output portion. We use the mean input-side
-    # weight as a simple, model-free aggregate; richer schemes (cross-attention
-    # alignment, retrieval-guided mapping, etc.) are a natural next experiment.
+    # Weight schedule for the output portion: the mean input-side weight is a
+    # simple model-free aggregate. Cross-attention alignment or retrieval-
+    # guided mapping would be natural drop-in replacements.
     mean_w  = sum(w_code) / len(w_code) if w_code else 1.0
     weights = [1.0] * n_prompt + [float(mean_w)] * n_out
 
-    # Preferred-mask schedule for the preference loss. We mark every output-
-    # side token as "preferred" at a rate proportional to the example-level
-    # salience. Users scaling up are encouraged to replace this with a token-
-    # aligned scheme (e.g. by projecting `mask` through the tokenizer offsets).
+    # Preferred-mask schedule for the preference loss: mark each output-side
+    # token as "preferred" at a rate proportional to example-level salience.
+    # A token-aligned scheme (projecting `mask` through tokenizer offsets) is
+    # a stronger option once the pipeline is stable.
     preferred_rate = sum(mask) / max(1, len(mask))
     preferred_mask = [0] * n_prompt + [
         int(torch.rand(1).item() < preferred_rate) for _ in range(n_out)
@@ -470,8 +462,7 @@ def build_training_example(
 #             optim.zero_grad(); loss.backward(); optim.step()
 #
 # Replace `YOUR_BACKBONE`, `YOUR_MAX_LEN`, `YOUR_BS`, `YOUR_LR`, and
-# `YOUR_EPOCHS` with the settings appropriate to your compute budget.
-# Distributed / mixed-precision / evaluation scaffolding is deliberately
-# omitted here -- those decisions are infrastructure-specific and should
-# be made by the scaling team.
+# `YOUR_EPOCHS` with values appropriate to your compute budget. Distributed
+# training, mixed precision, and evaluation scaffolding are left out; they
+# are infrastructure-specific.
 # ============================================================================

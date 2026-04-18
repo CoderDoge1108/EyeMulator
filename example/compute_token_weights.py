@@ -1,5 +1,5 @@
-"""Demo: load the EyeMulator priors and compute the per-token weight vector w_j
-for examples in a tokenized dataset file.
+"""Load the EyeMulator priors and compute the per-token weight w_j for
+examples in a tokenized dataset file.
 
 Usage:
     python example/compute_token_weights.py \\
@@ -7,9 +7,9 @@ Usage:
         --jsonl  dataset/completion_train_final.jsonl \\
         --limit  2
 
-This script is intentionally small and dependency-free (standard library only).
-It is meant to document the weight formula described in docs/METHOD_INTEGRATION.md
-and to let users sanity-check the artifacts.
+Standard library only. The script is small on purpose: it documents the
+weight formula from docs/method_integration.md and lets you sanity-check
+the priors against a handful of examples.
 """
 from __future__ import annotations
 
@@ -24,8 +24,8 @@ W_BASE = 3.0
 
 
 def load_priors(prior_dir: str) -> Dict[str, Any]:
-    """Load indexed n-grams, n-gram counts, and the Beta distributions for each
-    semantic label from a priors subfolder (combined/, reading/, or writing/)."""
+    """Load indexed n-grams, n-gram counts, and per-label Beta distributions
+    from a priors subfolder (combined/, reading/, or writing/)."""
     # indexed_ngrams.json lives only in combined/ and is shared across conditions.
     indexed = os.path.join(prior_dir, "indexed_ngrams.json")
     if not os.path.exists(indexed):
@@ -62,7 +62,7 @@ def load_priors(prior_dir: str) -> Dict[str, Any]:
 
 
 def token_weight(mask_j: int, ngram_idx_j: int, semantic_id_j: int, priors: Dict[str, Any]) -> float:
-    """The per-token weight w_j as defined in docs/METHOD_INTEGRATION.md."""
+    """Per-token weight w_j, as defined in docs/method_integration.md."""
     if mask_j == 0:
         return 1.0
 

@@ -1,22 +1,18 @@
 """Distribution analysis over the distilled human-attention priors.
 
-This script reproduces the human-side descriptive statistics that appear in
-the EyeMulator paper (Section "RQ1: Artifact Distillation"): the fitted Beta
-parameters per semantic label, the posterior mean salience
-E[theta_s] = alpha_s / (alpha_s + beta_s), and the most frequent
-monogram / bigram / trigram transitions over programmer fixation sequences.
+Reproduces the human-side descriptive statistics reported under "RQ1:
+Artifact Distillation" in the paper: fitted Beta parameters per semantic
+label, posterior mean salience E[theta_s] = alpha_s / (alpha_s + beta_s),
+and the most frequent monogram / bigram / trigram transitions over
+programmer fixation sequences.
 
-It uses only the Python standard library so that anyone with a fresh
-interpreter can inspect the priors without installing extra dependencies.
-Matplotlib is imported lazily and only required if you pass ``--plot``.
+Standard library only. Matplotlib is imported lazily and is needed only
+when ``--plot`` is passed.
 
 Example
 -------
     python example/analyze_human_attention.py --priors priors/combined --top 10
     python example/analyze_human_attention.py --priors priors/reading  --plot beta_reading.pdf
-
-The script is intentionally short and readable; treat it as a reference
-and adapt it freely to your own analyses.
 """
 
 from __future__ import annotations
