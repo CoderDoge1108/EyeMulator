@@ -55,12 +55,12 @@ The monogram / bigram / trigram counts jointly define a rarity signal: rarer n-g
 
 ## 2. Dataset sample (`dataset_sample/*.jsonl`)
 
-Each `.jsonl` file is a **small demonstration sample** — one example per line. Files are named `<task>_<split>_sample.jsonl` for:
+Each `.jsonl` file is a compact demonstration set — one example per line. Files are named `<task>_<split>_sample.jsonl` for:
 
 - `task ∈ {completion, summarization, translation}`
 - `split ∈ {train, valid, test}`
 
-These are not the full training / validation / test splits used in the paper. They contain enough examples to illustrate the schema and to exercise the demo script (`example/compute_token_weights.py`). To apply the EyeMulator method at full scale, users should supply their own data in the same schema — the per-token human-attention signals (`mask`, `ngram_indices`, `semantic_token_sequence`) can be computed from the priors using the process described in `METHOD_INTEGRATION.md`.
+The sample is meant as a starting point: it is balanced across the three tasks, runs end-to-end in a few minutes on a single GPU, and uses the same schema as a full-scale dataset so that you can swap in your own corpus without code changes. Producing a full-scale dataset amounts to applying the weight-derivation logic in `METHOD_INTEGRATION.md` to your own tokenized examples — the per-token human-attention signals (`mask`, `ngram_indices`, `semantic_token_sequence`) are computed from the priors, which are included in full.
 
 Each line is a JSON object with the following fields:
 

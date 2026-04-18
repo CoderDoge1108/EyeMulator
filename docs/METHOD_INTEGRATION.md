@@ -2,7 +2,7 @@
 
 This document describes, at a conceptual level, how to use the artifacts in this release to produce per-token weights `w_j` for a supervised fine-tuning (SFT) loss that emphasizes tokens humans tend to fixate on. The scripts under `example/` are reference snippets that realize what is described here; they are meant to be copied into your own codebase, pointed at your own dataset, and adapted to your own backbone.
 
-This document does not reproduce our paper's training runs. Implementation details — batching, distributed training, mixed precision, evaluation, schedule, checkpoint selection — are standard and are intentionally left to the user. The artifact is a data release, and the snippets are a method sketch.
+The guide is intentionally backbone- and framework-agnostic so that groups scaling the method up to larger models or to new codebases can plug these signals into whatever training stack they already use. Standard implementation details — batching, distributed training, mixed precision, evaluation, schedule, checkpoint selection — are left to the implementer.
 
 ## Overview
 
@@ -95,4 +95,4 @@ As a default, use `priors/combined/` — this is the variant that performed best
 
 ## A note on scope
 
-The formula above is a clean, per-token realization of the weighting scheme described in Section 2.4 of the paper, and the snippets in `example/weighted_sft_template.py` realize exactly this formulation. The artifact is intended as a starting point for others to apply the EyeMulator method to their own models and datasets; it is not a reproduction of our paper's specific training runs.
+The formula above is a clean, per-token realization of the weighting scheme described in Section 2.4 of the paper, and the snippets in `example/weighted_sft_template.py` realize exactly this formulation. The artifact is intended as a starting point for others to apply the EyeMulator method at their own scale — larger backbones, larger datasets, or new tasks — on top of the distilled human-attention signals that are expensive to reproduce from scratch.

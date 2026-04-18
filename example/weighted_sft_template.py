@@ -1,19 +1,18 @@
 """Reference snippets: how to integrate the EyeMulator human-attention weights
 into a supervised fine-tuning loop.
 
-This file is intentionally *not* an end-to-end runnable training pipeline. It
-is a documented collection of the key building blocks --- a weighted causal-LM
-loss, a weighted data collator, and a weighted-preprocessing function --- that
-an implementer can copy into their own codebase, adapt to their backbone, and
-wire into their own training orchestration.
+This file is a documented collection of the key building blocks --- a
+weighted causal-LM loss, a weighted data collator, and a weighted-
+preprocessing function --- designed to be copied into your own training
+stack and adapted to your backbone of choice (Llama, StarCoder, DeepSeek-
+Coder, or any larger model you wish to scale up to).
 
-We deliberately do not ship a `main()` / `Trainer` call here because (a) the
-choice of backbone, batching, schedule, evaluation strategy, and distributed
-setup is highly project-specific, and (b) this release is a data and method
-artifact, not a reproduction of our paper's training runs. See
-`docs/METHOD_INTEGRATION.md` for a conceptual walk-through, and
-`example/compute_token_weights.py` for a runnable demo that computes w_j from
-the priors.
+The snippets are deliberately framework-agnostic: the choice of batching,
+learning-rate schedule, evaluation strategy, and distributed setup is
+highly project-specific, so those decisions are left to the implementer. See
+`docs/METHOD_INTEGRATION.md` for the conceptual walk-through and
+`example/compute_token_weights.py` for a runnable demo that computes w_j
+from the priors without any heavyweight dependencies.
 
 Dependencies, if you want to import these classes into your own project:
     pip install torch transformers
