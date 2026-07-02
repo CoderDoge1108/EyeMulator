@@ -7,9 +7,7 @@ Companion artifact for the ACL 2026 paper
 **"EyeMulator: Improving Code Language Models by Mimicking Human Visual Attention"**
 by Yifan Zhang, Chen Huang, Yueke Zhang, Jiahao Zhang, Toby Li, Collin McMillan, Kevin Leach, and Yu Huang.
 
-EyeMulator aligns code language models with human visual attention. Eye-tracking data is distilled into a small set of reusable priors (Beta distributions over semantic token classes, plus n-gram transition counts), pseudo-scan paths are generated from those priors over arbitrary code, and the model is trained with a weighted cross-entropy loss combined with a token-level preference loss. This repository contains the priors themselves, a small demonstration dataset, a reference PyTorch implementation of the method components, and the full code-first reproducibility layer for the paper experiments.
-
-This repository has two layers: the lightweight human-attention artifact (`priors/`, `dataset_sample/`, `docs/`, `example/`, `figures/`) and the full experiment artifact (`src/`, `experiments/`, `corpus/`, `paper_results/`). Use the first layer to inspect or integrate the priors, and the second layer to rerun training, evaluation, and table-generation pipelines.
+EyeMulator aligns code language models with human visual attention. Eye-tracking data is distilled into a small set of reusable priors (Beta distributions over semantic token classes, plus n-gram transition counts), pseudo-scan paths are generated from those priors over arbitrary code, and the model is trained with a weighted cross-entropy loss combined with a token-level preference loss. This repository contains the priors themselves, a small demonstration dataset, and a reference PyTorch implementation of the method components.
 
 ## Repository layout
 
@@ -37,16 +35,10 @@ EyeMulator/
 │   ├── data_schema.md              field-by-field format of priors and dataset
 │   ├── method_integration.md       how to wire the priors into a training loop
 │   └── human_attention_analysis.md distribution analysis of the priors + figure index
-├── example/
-│   ├── analyze_human_attention.py  summarize Beta params and top n-grams from priors
-│   ├── compute_token_weights.py    load priors and compute per-token weight w_j
-│   └── weighted_sft_template.py    reference implementation of the method components
-├── src/                            training, evaluation, metrics, and analysis scripts
-├── experiments/                    shell drivers for full-grid and targeted reruns
-├── corpus/                         full task splits and session-specific gaze priors
-├── paper_results/                  metric JSONs backing current paper tables
-├── environment_eyemulator.yml      conda environment for reproduction
-└── REPRODUCIBILITY.md              end-to-end experiment reproduction guide
+└── example/
+    ├── analyze_human_attention.py  summarize Beta params and top n-grams from priors
+    ├── compute_token_weights.py    load priors and compute per-token weight w_j
+    └── weighted_sft_template.py    reference implementation of the method components
 ```
 
 ## Origin of the eye-tracking data
@@ -94,18 +86,6 @@ pip install torch transformers
 - `WeightedCollator`, `build_training_example` — batching and preprocessing helpers.
 
 The file is backbone-agnostic (swap `LlamaForCausalLM` for whichever model you use) and does not hard-code our training schedule, so it composes with an existing `Trainer`, `accelerate`, or custom loop.
-
-## Reproducing the paper experiments
-
-For the complete training/evaluation pipeline, see [`REPRODUCIBILITY.md`](REPRODUCIBILITY.md). In brief:
-
-```bash
-conda env create -f environment_eyemulator.yml
-conda activate eyemulator
-./experiments/run_experiments.sh
-```
-
-The scripts write trained adapters to `workspace/` and generated predictions to `results/`, both of which are intentionally git-ignored. The checked-in `paper_results/` directory contains the metric JSONs used to audit the paper tables.
 
 ## Directions worth trying
 
