@@ -92,7 +92,7 @@ L_SFT(φ) = −(1 / |P̃|) · Σ_{j ∈ P̃}  w_j · log P_φ(x_j | x_{<j})
 
 ### 3b. Token-level preference term
 
-The preference term adapts DPO (Rafailov et al., 2023) to the token level: the tokens on the pseudo-scan path `P̃` are the winning trajectory, and the complement `x \ P̃` is the losing trajectory. With `π_φ` the current policy and `π_ref` a frozen copy of the initial policy, define the per-token log-ratio
+The preference term adapts DPO (Rafailov et al., 2023) to the token level: the tokens on the pseudo-scan path `P̃` form the preferred set, and the complement `x \ P̃` forms the dispreferred set. With `π_φ` the trainable policy and `π_ref` a frozen copy of the initial policy, define the per-token log-ratio
 
 ```
 r_j = log π_φ(x_j | x_{<j})  −  log π_ref(x_j | x_{<j})
@@ -112,7 +112,7 @@ where `β` controls the sigmoid-margin strength. `weighted_sft_template.py` prov
 
 ## Dynamic vs. precomputed scan paths
 
-`build_training_example` accepts a `dynamic_path` flag. With `dynamic_path=True`, a fresh pseudo-scan path is sampled per call from the priors (Algorithm 1 as written in the paper); with `dynamic_path=False`, the precomputed `mask` field in each JSONL example is reused. The precomputed path is faster and adequate for small-scale tuning; dynamic regeneration is better behaved when sweeping new hyperparameters or scaling the dataset up, since it avoids overfitting to a single realization of the path.
+`build_training_example` accepts a `dynamic_path` flag. With `dynamic_path=True`, a fresh pseudo-scan path is sampled per call from the priors (Algorithm 1 as written in the paper); with `dynamic_path=False`, the precomputed `mask` field in each JSONL example is reused. The precomputed path is faster for small-scale runs; dynamic regeneration can reduce dependence on a single sampled path when evaluating new hyperparameters or scaling the dataset up.
 
 A few implementation notes:
 
@@ -123,7 +123,7 @@ A few implementation notes:
 
 ## Choosing a condition (combined / reading / writing)
 
-As a default, use `priors/combined/`, which worked best overall in our experiments. Use `priors/reading/` for comprehension-heavy tasks (code summarization, code search) and `priors/writing/` for generation-heavy tasks (completion, open-ended code generation).
+For the paper's default configuration, use `priors/combined/`. Use `priors/reading/` for comprehension-heavy tasks (code summarization, code search) and `priors/writing/` for generation-heavy tasks (completion, open-ended code generation).
 
 ## Scope
 

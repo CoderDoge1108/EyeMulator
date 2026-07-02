@@ -51,7 +51,7 @@ The two quantities you will typically use:
 
 `{"('label_a', 'label_b', 'label_c')" → int}`. Counts of semantic-label trigrams in the observed scan paths.
 
-Together, the monogram / bigram / trigram counts define the rarity signal: rarer n-grams get a larger boost in the per-token weight `w_j` (see [`method_integration.md`](method_integration.md)).
+Together, the monogram / bigram / trigram counts define the rarity signal: rarer n-grams receive a larger contribution in the per-token weight `w_j` (see [`method_integration.md`](method_integration.md)).
 
 ## 2. Dataset sample (`dataset_sample/*.jsonl`)
 
