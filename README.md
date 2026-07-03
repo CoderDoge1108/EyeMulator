@@ -6,7 +6,7 @@
 Artifact for **EyeMulator: Improving Code Language Models by Mimicking Human Visual Attention**
 by Yifan Zhang, Chen Huang, Yueke Zhang, Jiahao Zhang, Toby Li, Collin McMillan, Kevin Leach, and Yu Huang.
 
-This is the **EyeMulator artifact**. It is an extension of the EyeMulator line of work (Zhang et al.), which itself builds on the EyeTrans eye-tracking study (Zhang et al., FSE'24). The accompanying extended write-up is included as [`EyeMulator_Extended.pdf`](EyeMulator_Extended.pdf); throughout this artifact, "the paper" refers to that write-up.
+This is the **EyeMulator artifact**. It accompanies the EyeMulator paper (Zhang et al., ACL 2026) and extends it with an updated method implementation, additional backbones, and expanded analyses. The human visual-attention data is sourced from the EyeTrans eye-tracking study (Zhang et al., FSE'24). The accompanying extended write-up is included as [`EyeMulator_Extended.pdf`](EyeMulator_Extended.pdf); throughout this artifact, "the paper" refers to that write-up.
 
 EyeMulator aligns code language models with human visual attention. Eye-tracking data is distilled into a small set of reusable priors (Beta distributions over semantic token classes, plus n-gram transition counts), pseudo-scan paths are generated from those priors over arbitrary code, and the model is trained with a weighted cross-entropy loss combined with a token-level preference loss. This repository contains the priors themselves, a small demonstration dataset, a reference PyTorch implementation of the method components, and the code-first reproducibility layer for the EyeMulator experiments.
 
