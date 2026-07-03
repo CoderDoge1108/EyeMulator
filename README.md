@@ -6,11 +6,14 @@
 Artifact for the **extended version of EyeMulator: Improving Code Language Models by Mimicking Human Visual Attention**
 by Yifan Zhang, Chen Huang, Yueke Zhang, Jiahao Zhang, Toby Li, Collin McMillan, Kevin Leach, and Yu Huang.
 
-This artifact accompanies the **extended version of EyeMulator**, which builds on and extends the original EyeMulator paper (Zhang et al., ACL 2026) with an updated method implementation, additional backbones, and expanded analyses. The human visual-attention data is sourced from the EyeTrans eye-tracking study (Zhang et al., FSE'24). The extended write-up is included as [`EyeMulator_Extended.pdf`](EyeMulator_Extended.pdf); throughout this artifact, "the paper" refers to that write-up.
+**What EyeMulator does.** EyeMulator aligns code language models with human visual attention. Eye-tracking data is distilled into a small set of reusable priors — Beta distributions over semantic token classes plus n-gram transition counts. Pseudo-scan paths are generated from those priors over arbitrary code, and the model is trained with a weighted cross-entropy loss combined with a token-level preference loss.
 
-EyeMulator aligns code language models with human visual attention. Eye-tracking data is distilled into a small set of reusable priors (Beta distributions over semantic token classes, plus n-gram transition counts), pseudo-scan paths are generated from those priors over arbitrary code, and the model is trained with a weighted cross-entropy loss combined with a token-level preference loss. This repository contains the priors themselves, a small demonstration dataset, a reference PyTorch implementation of the method components, and the code-first reproducibility layer for the EyeMulator experiments.
+**This release.** This is the extended version of the original EyeMulator paper (Zhang et al., ACL 2026): it adds an updated method implementation, more backbones, and expanded analyses. The full extended write-up ships with the repository as [`EyeMulator_Extended.pdf`](EyeMulator_Extended.pdf) — this is what "the paper" refers to below. The human visual-attention data is sourced from the EyeTrans eye-tracking study (Zhang et al., FSE'24).
 
-This repository has two layers: the lightweight human-attention artifact (`priors/`, `dataset_sample/`, `docs/`, `example/`, `figures/`) and the full experiment artifact (`src/`, `experiments/`, `corpus/`, `paper_results/`). Use the first layer to inspect or integrate the priors, and the second layer to rerun training, evaluation, and table-generation pipelines.
+**Two layers.**
+
+- **Human-attention layer** — `priors/`, `dataset_sample/`, `docs/`, `example/`, `figures/`: inspect or integrate the distilled priors, with a reference PyTorch implementation of the method components.
+- **Experiment layer** — `src/`, `experiments/`, `corpus/`, `paper_results/`: rerun the full training, evaluation, and table-generation pipelines.
 
 ## Repository layout
 
