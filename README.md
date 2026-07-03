@@ -3,11 +3,12 @@
 ![License: MIT (code) / CC-BY-4.0 (data)](https://img.shields.io/badge/license-MIT%20%2F%20CC--BY--4.0-blue)
 ![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)
 
-Companion artifact for the ACL 2026 paper
-**"EyeMulator: Improving Code Language Models by Mimicking Human Visual Attention"**
+Artifact for **EyeMulator: Improving Code Language Models by Mimicking Human Visual Attention**
 by Yifan Zhang, Chen Huang, Yueke Zhang, Jiahao Zhang, Toby Li, Collin McMillan, Kevin Leach, and Yu Huang.
 
-EyeMulator aligns code language models with human visual attention. Eye-tracking data is distilled into a small set of reusable priors (Beta distributions over semantic token classes, plus n-gram transition counts), pseudo-scan paths are generated from those priors over arbitrary code, and the model is trained with a weighted cross-entropy loss combined with a token-level preference loss. This repository contains the priors themselves, a small demonstration dataset, a reference PyTorch implementation of the method components, and the full code-first reproducibility layer for the paper experiments.
+This is the **EyeMulator artifact**. It is an extension of the EyeMulator line of work (Zhang et al.), which itself builds on the EyeTrans eye-tracking study (Zhang et al., FSE'24). The accompanying extended write-up is included as [`EyeMulator_Extended.pdf`](EyeMulator_Extended.pdf); throughout this artifact, "the paper" refers to that write-up.
+
+EyeMulator aligns code language models with human visual attention. Eye-tracking data is distilled into a small set of reusable priors (Beta distributions over semantic token classes, plus n-gram transition counts), pseudo-scan paths are generated from those priors over arbitrary code, and the model is trained with a weighted cross-entropy loss combined with a token-level preference loss. This repository contains the priors themselves, a small demonstration dataset, a reference PyTorch implementation of the method components, and the code-first reproducibility layer for the EyeMulator experiments.
 
 This repository has two layers: the lightweight human-attention artifact (`priors/`, `dataset_sample/`, `docs/`, `example/`, `figures/`) and the full experiment artifact (`src/`, `experiments/`, `corpus/`, `paper_results/`). Use the first layer to inspect or integrate the priors, and the second layer to rerun training, evaluation, and table-generation pipelines.
 
@@ -18,6 +19,7 @@ EyeMulator/
 ├── README.md
 ├── LICENSE                         MIT (code) + CC-BY-4.0 attribution (data)
 ├── CITATION.bib
+├── EyeMulator_Extended.pdf         extended EyeMulator write-up
 ├── priors/
 │   ├── combined/                   distilled from reading + writing sessions
 │   ├── reading/                    reading-only sessions
@@ -26,7 +28,7 @@ EyeMulator/
 │   ├── completion_{train,valid,test}_sample.jsonl
 │   ├── summarization_{train,valid,test}_sample.jsonl
 │   └── translation_{train,valid,test}_sample.jsonl
-├── figures/                        human-side figures from the paper
+├── figures/                        human-side figures from the write-up
 │   ├── human_study.pdf
 │   ├── eyemulator_overview.pdf
 │   ├── eyemulator_pseudo_path.pdf
@@ -42,9 +44,9 @@ EyeMulator/
 │   ├── compute_token_weights.py    load priors and compute per-token weight w_j
 │   └── weighted_sft_template.py    reference implementation of the method components
 ├── src/                            training, evaluation, metrics, and analysis scripts
-├── experiments/                    shell drivers for full-grid and targeted reruns
+├── experiments/                    shell drivers for full-grid runs and low-data sweeps
 ├── corpus/                         full task splits and session-specific gaze priors
-├── paper_results/                  metric JSONs backing current paper tables
+├── paper_results/                  metric JSONs accompanying the paper tables
 ├── environment_eyemulator.yml      conda environment for reproduction
 └── REPRODUCIBILITY.md              end-to-end experiment reproduction guide
 ```
@@ -118,7 +120,7 @@ If you try any of these, we'd be glad to hear about it — please open an issue.
 
 ## Citing
 
-Please cite both the EyeMulator paper and the EyeTrans dataset. BibTeX is in [`CITATION.bib`](CITATION.bib).
+This artifact extends EyeMulator; please cite both the EyeMulator paper and the EyeTrans dataset. BibTeX is in [`CITATION.bib`](CITATION.bib).
 
 ## License
 

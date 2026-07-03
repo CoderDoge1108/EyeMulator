@@ -1,12 +1,6 @@
-# ==================================================================================
-#  Group-Based Evaluation Script (Final Corrected Version)
-# ==================================================================================
-#  This script evaluates model performance on a per-group basis, comparing
-#  four distinct result categories. It now assumes all input files contain
-#  'group_label' for robust, direct evaluation.
-# ==================================================================================
+# Group-based evaluation for session-mode analysis.
+# The script expects input result files to contain a `group_label` field.
 
-# ────── imports ─────────────────────────────────────────────────────────────
 import json, math, re, textwrap, os, sys
 from collections import defaultdict
 import numpy as np

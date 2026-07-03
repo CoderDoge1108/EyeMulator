@@ -43,7 +43,7 @@ The underlying data is [`../priors/combined/beta_distribution.json`](../priors/c
 
 ![](../figures/category_distribution.pdf)
 
-`figures/category_distribution.pdf` shows how the semantic category mix differs across the completion, translation, and summarization corpora. Completion is dominated by structural boilerplate; summarization skews toward API-contract tokens. This is part of why we ship separate reading-derived and writing-derived priors: you can pick the variant best matched to the task.
+`figures/category_distribution.pdf` shows how the semantic category mix differs across the completion, translation, and summarization corpora. Completion is dominated by structural boilerplate; summarization skews toward API-contract tokens. This is part of why we ship separate reading-derived and writing-derived priors: users can choose the prior variant that matches their evaluation setting.
 
 ## 6. N-gram fixation patterns (Table 1 in the paper)
 

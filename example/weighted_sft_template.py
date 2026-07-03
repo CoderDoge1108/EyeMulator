@@ -412,8 +412,8 @@ def build_training_example(
 
     # Preferred-mask schedule for the preference loss: mark each output-side
     # token as "preferred" at a rate proportional to example-level salience.
-    # A token-aligned scheme (projecting `mask` through tokenizer offsets) is
-    # a stronger option once the pipeline is stable.
+    # A token-aligned scheme (projecting `mask` through tokenizer offsets) can
+    # be substituted when tokenizer offsets are available.
     preferred_rate = sum(mask) / max(1, len(mask))
     preferred_mask = [0] * n_prompt + [
         int(torch.rand(1).item() < preferred_rate) for _ in range(n_out)

@@ -92,7 +92,7 @@ def generate_results(model_path, task, test_data_file, output_file, device):
     logging.info("Successfully generated and saved all results for the baseline model. 🎉")
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Evaluate the baseline fine-tuned StarCoder model.") # Updated description
+    parser = argparse.ArgumentParser(description="Evaluate the baseline fine-tuned StarCoder model.")
     parser.add_argument("--task", type=str, default="completion", choices=["translation", "summarization", "completion"], help="The task to evaluate.")
     parser.add_argument("--device", type=str, default="cuda:0", help="The device to run evaluation on (e.g., 'cuda:1', 'cpu').")
     args = parser.parse_args()

@@ -46,7 +46,7 @@ SEMANTIC_LABEL_ATTENTION = {}
 SEMANTIC_ID_TO_LABEL = {}
 
 
-# --- Custom Model with Corrected Loss Calculation ---
+# Custom model with weighted loss.
 class LlamaForCausalLMWithWeightedLoss(LlamaForCausalLM):
     def forward(
         self,
@@ -89,7 +89,7 @@ class LlamaForCausalLMWithWeightedLoss(LlamaForCausalLM):
                 shift_weights = weights[..., 1:].contiguous().view(-1)
                 active_weights = shift_weights[active_loss_mask]
                 
-                # The final loss is the mean of the losses scaled by the weights
+                # Average token losses after applying the attention-derived weights.
                 scaled_loss = (active_losses * active_weights).sum()
                 num_active_tokens = active_loss_mask.sum()
                 final_loss = scaled_loss / (num_active_tokens + 1e-9)

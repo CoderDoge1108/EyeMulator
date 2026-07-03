@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # =============================================================================
-# Targeted low-data reruns for selected (model, task) cells.
+# Optional low-data sweep configurations for (model, task) cells.
 #
 # The script waits for an available GPU, skips cells whose results already
-# exist, and logs each job. Adjust the run_job lines at the bottom to target
-# other cells or hyperparameters.
+# exist, and logs each job. Adjust the run_job lines at the bottom to evaluate
+# additional cells or hyperparameters.
 # =============================================================================
 set -u -o pipefail
 
@@ -15,9 +15,9 @@ cd "$ROOT"
 TRAIN="${ROOT}/src/training/train_unified.py"
 EVAL="${ROOT}/src/evaluation/eval_unified.py"
 DATA="${DATA:-${ROOT}/corpus/data}"
-WORK_BASE="${WORK_BASE:-${ROOT}/workspace/targeted_reruns}"
-RESULT_BASE="${RESULT_BASE:-${ROOT}/results/targeted_reruns}"
-LOG_DIR="${LOG_DIR:-${ROOT}/workspace/logs/targeted_reruns}"
+WORK_BASE="${WORK_BASE:-${ROOT}/workspace/low_data_sweeps}"
+RESULT_BASE="${RESULT_BASE:-${ROOT}/results/low_data_sweeps}"
+LOG_DIR="${LOG_DIR:-${ROOT}/workspace/logs/low_data_sweeps}"
 
 mkdir -p "$WORK_BASE" "$RESULT_BASE" "$LOG_DIR"
 
@@ -112,5 +112,5 @@ run_job "low_deepseek_sum_r32_lr5e5_e5"  "deepseek"   "summarization" 200 5 5e-5
 run_job "low_qwen_completion_r64_lr5e5"  "qwen35-2b"  "completion"    200 5 5e-5 64 128 1 16 16000 || FAILED=$((FAILED + 1))
 run_job "low_smollm_completion_r64_lr5e5" "smollm3-3b" "completion"   200 5 5e-5 64 128 1 16 16000 || FAILED=$((FAILED + 1))
 
-echo "[$(timestamp)] TARGETED RERUNS COMPLETE failed=${FAILED}"
+echo "[$(timestamp)] LOW-DATA SWEEPS COMPLETE failed=${FAILED}"
 exit "$FAILED"

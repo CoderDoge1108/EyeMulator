@@ -1,11 +1,15 @@
 # EyeMulator: Improving Code Language Models by Mimicking Human Visual Attention
 
-Reproducibility artifact for **EyeMulator**. EyeMulator fine-tunes code language
-models with a token-weighted loss derived from human visual-attention priors
-(distilled from eye-tracking data), so the model learns to emphasize the tokens
-that humans attend to most. This repository contains the code, the distilled
-attention priors, the training/evaluation datasets, and the exact metric outputs
-used to build the paper's tables and figures.
+Reproducibility artifact for **EyeMulator**, an extended version of the EyeMulator
+work (Zhang et al.) that builds on the EyeTrans eye-tracking study (Zhang et al.,
+FSE'24). EyeMulator fine-tunes code language models with a token-weighted loss
+derived from human visual-attention priors (distilled from eye-tracking data), so
+the model learns to emphasize the tokens that humans attend to most. This
+repository contains the code, the distilled attention priors, the
+training/evaluation datasets, and metric summaries for the tables and figures.
+The accompanying extended write-up is included at the repository root as
+`EyeMulator_Extended.pdf`; throughout this artifact, "the paper" refers to that
+write-up.
 
 > This is the **code-first** layer of the artifact, focused on end-to-end
 > reproduction of the experiments. The lightweight human-attention layer remains
@@ -22,7 +26,7 @@ EyeMulator/
 │   ├── evaluation/
 │   │   ├── eval_unified.py       # canonical CLI evaluator (generates predictions)
 │   │   └── eval_<model>_*.py     # model-specific evaluation entry points
-│   ├── analysis/                 # produce current result tables from predictions
+│   ├── analysis/                 # produce result tables from predictions
 │   │   ├── cross_task_evaluation_unified.py   # RQ2 cross-task table
 │   │   ├── session_mode_evaluation.py         # RQ3 session-mode table
 │   │   ├── session_mode_evaluation_labeling.py # RQ3 LLM-assisted labeling step
@@ -30,15 +34,16 @@ EyeMulator/
 │   └── compute_metrics.py        # Exact Match / METEOR scoring for predictions
 ├── experiments/
 │   ├── run_experiments.sh        # drive the full (model × task × method) grid
-│   └── targeted_reruns.sh        # GPU-aware targeted low-data reruns
+│   └── low_data_sweeps.sh        # GPU-aware low-data sweep configurations
 ├── corpus/
 │   ├── data/                     # main train/valid/test splits + attention priors
 │   ├── data_reading/             # reading-session attention priors
 │   ├── data_writing/             # writing-session attention priors
 │   ├── data_session_reading/     # RQ3 session priors (large .jsonl excluded, see note)
 │   └── data_session_writing/     # RQ3 session priors (large .jsonl excluded, see note)
-├── paper_results/                # metric JSONs backing the paper tables/figures
+├── paper_results/                # metric JSONs accompanying the paper tables/figures
 ├── environment_eyemulator.yml    # conda environment
+├── EyeMulator_Extended.pdf       # extended EyeMulator write-up
 ├── .gitignore
 └── README.md
 ```
@@ -112,11 +117,11 @@ MODELS="qwen35-2b smollm3-3b" TASKS="completion" ./experiments/run_experiments.s
 Adapters land in `workspace/`, predictions in `results/`. Then score each cell
 with `src/compute_metrics.py` as shown above.
 
-### Targeted low-data reruns
+### Optional low-data sweeps
 
-`experiments/targeted_reruns.sh` waits for a free GPU, skips completed
-cells, and runs selected low-data recipes. Edit the `run_job` lines at the
-bottom to target other cells or hyperparameters.
+`experiments/low_data_sweeps.sh` waits for a free GPU, skips completed cells,
+and runs predefined low-data configurations. Edit the `run_job` lines at the
+bottom to evaluate additional cells or hyperparameters.
 
 ## Ablation / gaze-signal variants (RQ4)
 
@@ -137,10 +142,10 @@ folders before running the session-mode pipeline.
 
 ## `paper_results/`
 
-The JSON files here are the exact scored metrics used to build the paper's
-tables/figures (e.g. `current_rq2_best_metrics_alt.json` for the main cross-task
-table, `current_rq4_ablation_metrics.json` for the component ablation,
-and `current_rq3_*` for session mode). Use them to cross-check regenerated
-numbers. Attention-map diagnostics are excluded from this code-first layer
-because they are distributed as qualitative appendix diagnostics rather than as
-part of the unified training/evaluation pipeline.
+The JSON files here are the scored metric summaries associated with the paper's
+tables/figures (e.g. `rq2_model_task_metrics_alt.json` for the main cross-task
+table, `rq4_ablation_metrics.json` for the component ablation, and
+`rq3_*` for session mode). Use them to cross-check regenerated numbers.
+Attention-map diagnostics are excluded from this code-first layer because they
+are distributed as qualitative appendix diagnostics rather than as part of the
+unified training/evaluation pipeline.

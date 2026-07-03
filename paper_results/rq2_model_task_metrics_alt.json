@@ -84,7 +84,7 @@
         "baseline": 77.84522003034901,
         "ours": 96.8133535660091,
         "delta": 18.96813353566009,
-        "run": "targeted_reruns/low_qwen_completion_r64_lr5e5_e5/qwen35-2b_results/generated_results_eyemulator_completion_seed42",
+        "run": "low_data_sweeps/low_qwen_completion_r64_lr5e5_e5/qwen35-2b_results/generated_results_eyemulator_completion_seed42",
         "baseline_path": "results_extra/low/completion_qwen35-2b_baseline_seed42/generations_test_completion.json"
       },
       "translation": {
@@ -110,7 +110,7 @@
         "baseline": 77.69347496206373,
         "ours": 92.64036418816388,
         "delta": 14.94688922610015,
-        "run": "targeted_reruns/low_smollm_completion_r64_lr5e5_e5/smollm3-3b_results/generated_results_eyemulator_completion_seed42",
+        "run": "low_data_sweeps/low_smollm_completion_r64_lr5e5_e5/smollm3-3b_results/generated_results_eyemulator_completion_seed42",
         "baseline_path": "results_extra/low/completion_smollm3-3b_baseline_seed42/generations_test_completion.json"
       },
       "translation": {
