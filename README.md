@@ -1,12 +1,12 @@
-# EyeMulator — Human-Attention Artifact
+# EyeMulator (Extended Version) — Artifact
 
 ![License: MIT (code) / CC-BY-4.0 (data)](https://img.shields.io/badge/license-MIT%20%2F%20CC--BY--4.0-blue)
 ![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)
 
-Artifact for **EyeMulator: Improving Code Language Models by Mimicking Human Visual Attention**
+Artifact for the **extended version of EyeMulator: Improving Code Language Models by Mimicking Human Visual Attention**
 by Yifan Zhang, Chen Huang, Yueke Zhang, Jiahao Zhang, Toby Li, Collin McMillan, Kevin Leach, and Yu Huang.
 
-This is the **EyeMulator artifact**. It accompanies the EyeMulator paper (Zhang et al., ACL 2026) and extends it with an updated method implementation, additional backbones, and expanded analyses. The human visual-attention data is sourced from the EyeTrans eye-tracking study (Zhang et al., FSE'24). The accompanying extended write-up is included as [`EyeMulator_Extended.pdf`](EyeMulator_Extended.pdf); throughout this artifact, "the paper" refers to that write-up.
+This artifact accompanies the **extended version of EyeMulator**, which builds on and extends the original EyeMulator paper (Zhang et al., ACL 2026) with an updated method implementation, additional backbones, and expanded analyses. The human visual-attention data is sourced from the EyeTrans eye-tracking study (Zhang et al., FSE'24). The extended write-up is included as [`EyeMulator_Extended.pdf`](EyeMulator_Extended.pdf); throughout this artifact, "the paper" refers to that write-up.
 
 EyeMulator aligns code language models with human visual attention. Eye-tracking data is distilled into a small set of reusable priors (Beta distributions over semantic token classes, plus n-gram transition counts), pseudo-scan paths are generated from those priors over arbitrary code, and the model is trained with a weighted cross-entropy loss combined with a token-level preference loss. This repository contains the priors themselves, a small demonstration dataset, a reference PyTorch implementation of the method components, and the code-first reproducibility layer for the EyeMulator experiments.
 

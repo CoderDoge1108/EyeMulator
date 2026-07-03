@@ -1,15 +1,15 @@
 # EyeMulator: Improving Code Language Models by Mimicking Human Visual Attention
 
-Reproducibility artifact for the **EyeMulator** paper (Zhang et al., ACL 2026) and
-its extended version. EyeMulator fine-tunes code language models with a
-token-weighted loss derived from human visual-attention priors (distilled from
-eye-tracking data), so the model learns to emphasize the tokens that humans attend
-to most. The human visual-attention data is sourced from the EyeTrans eye-tracking
-study (Zhang et al., FSE'24). This repository contains the code, the distilled
-attention priors, the training/evaluation datasets, and metric summaries for the
-tables and figures. The accompanying extended write-up is included at the
-repository root as `EyeMulator_Extended.pdf`; throughout this artifact, "the paper"
-refers to that write-up.
+Reproducibility artifact for the **extended version of EyeMulator**, which builds
+on and extends the original EyeMulator paper (Zhang et al., ACL 2026). EyeMulator
+fine-tunes code language models with a token-weighted loss derived from human
+visual-attention priors (distilled from eye-tracking data), so the model learns to
+emphasize the tokens that humans attend to most. The human visual-attention data is
+sourced from the EyeTrans eye-tracking study (Zhang et al., FSE'24). This repository
+contains the code, the distilled attention priors, the training/evaluation datasets,
+and metric summaries for the tables and figures. The accompanying extended write-up
+is included at the repository root as `EyeMulator_Extended.pdf`; throughout this
+artifact, "the paper" refers to that write-up.
 
 > This is the **code-first** layer of the artifact, focused on end-to-end
 > reproduction of the experiments. The lightweight human-attention layer remains
